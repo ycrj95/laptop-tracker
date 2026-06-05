@@ -41,6 +41,10 @@ select:focus,input:focus{border-color:var(--accent);background:#fff}
 .btn-danger{background:var(--danger)}
 .btn-warn{background:var(--warn)}
 .btn-success{background:var(--accent2)}
+.staff-option{padding:.7rem 1rem;cursor:pointer;font-size:.9rem;border-bottom:1px solid var(--border)}
+.staff-option:last-child{border-bottom:none}
+.staff-option:hover{background:#f0f4ff;color:var(--accent)}
+.staff-option.selected{background:#e8effe;color:var(--accent);font-weight:500}
 #login-err{color:var(--danger);font-size:.85rem;margin-top:.5rem;display:none}
 
 /* APP */
@@ -121,9 +125,9 @@ tr:hover td{background:#f8f9fc}
     <div class="login-sub">Staff Portal — select your name to continue</div>
     <div class="field">
       <label>Your Name</label>
-      <select id="staff-select">
-        <option value="">— Select your name —</option>
-      </select>
+      <input type="text" id="staff-search" placeholder="Type your name..." oninput="filterStaffList()" autocomplete="off"/>
+      <div id="staff-dropdown" style="display:none;background:#fff;border:1.5px solid var(--border);border-top:none;border-radius:0 0 10px 10px;max-height:200px;overflow-y:auto;position:relative;z-index:10"></div>
+      <input type="hidden" id="staff-select"/>
     </div>
     <button class="btn" onclick="staffLogin()">Continue →</button>
     <div id="login-err">Please select your name to continue.</div>
@@ -259,22 +263,50 @@ async function loadStaff() {
   try {
     const data = await api("getStaff");
     staffList = data.staff || [];
-    const sel = document.getElementById("staff-select");
-    staffList.filter(s=>s.active).forEach(s => {
-      const o = document.createElement("option");
-      o.value = s.name; o.textContent = s.name; sel.appendChild(o);
-    });
   } catch(e) { console.error(e); }
 }
 
+function filterStaffList() {
+  const query = document.getElementById("staff-search").value.trim().toLowerCase();
+  const dd = document.getElementById("staff-dropdown");
+  document.getElementById("staff-select").value = "";
+  if (!query) { dd.style.display="none"; return; }
+  const matches = staffList.filter(s => s.active && s.name.toLowerCase().includes(query));
+  if (!matches.length) { dd.style.display="none"; return; }
+  dd.style.display="block";
+  dd.innerHTML = matches.map(s =>
+    `<div class="staff-option" onclick="selectStaff('${s.name.replace(/'/g,"\\'")}')">
+      ${s.name}
+    </div>`).join("");
+}
+
+function selectStaff(name) {
+  document.getElementById("staff-search").value = name;
+  document.getElementById("staff-select").value = name;
+  document.getElementById("staff-dropdown").style.display = "none";
+  document.getElementById("login-err").style.display = "none";
+}
+
+// Hide dropdown when clicking outside
+document.addEventListener("click", e => {
+  if (!e.target.closest(".field")) {
+    document.getElementById("staff-dropdown").style.display = "none";
+  }
+});
+
 async function staffLogin() {
-  const name = document.getElementById("staff-select").value;
+  const name = document.getElementById("staff-select").value ||
+               document.getElementById("staff-search").value.trim();
   if (!name) { document.getElementById("login-err").style.display="block"; return; }
-  currentStaff = name;
+  // Validate against staff list
+  const match = staffList.find(s => s.name.toLowerCase() === name.toLowerCase() && s.active);
+  if (!match) { document.getElementById("login-err").style.display="block";
+    document.getElementById("login-err").textContent="Name not found. Please select from the list."; return; }
+  currentStaff = match.name;
   document.getElementById("login-screen").style.display = "none";
   document.getElementById("app").style.display = "flex";
-  document.getElementById("hdr-name").textContent = name;
-  document.getElementById("welcome-name").textContent = "Hello, " + name.split(" ")[0] + " 👋";
+  document.getElementById("hdr-name").textContent = match.name;
+  document.getElementById("welcome-name").textContent = "Hello, " + match.name.split(" ")[0] + " 👋";
   await refreshHome();
 }
 
@@ -282,7 +314,9 @@ function logout() {
   currentStaff = null; myLaptop = null;
   document.getElementById("login-screen").style.display = "flex";
   document.getElementById("app").style.display = "none";
+  document.getElementById("staff-search").value = "";
   document.getElementById("staff-select").value = "";
+  document.getElementById("login-err").style.display = "none";
 }
 
 async function refreshHome() {
