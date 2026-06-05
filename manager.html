@@ -439,7 +439,10 @@ async function loadDashboard(){
       <div class="info-row"><span>Under Repair</span><span style="font-weight:600;color:var(--warn)">${s.inRepair||0} laptops</span></div>
       <div class="info-row"><span>Damaged / Scrap</span><span style="font-weight:600;color:var(--danger)">${(s.damaged||0)+(s.scrap||0)} laptops</span></div>
       <div class="info-row"><span>Active Staff</span><span style="font-weight:600">${s.activeStaff||0}</span></div>
-      <div class="info-row"><span>Staff without Laptop</span><span style="font-weight:600">${(s.activeStaff||0)-(s.issued||0)}</span></div>`;
+      <div class="info-row"><span>Staff without Laptop</span><span style="font-weight:600">${Math.max(0,(s.activeStaff||0)-(s.issued||0))}</span></div>
+      <div class="info-row" style="border-top:1.5px solid var(--border);margin-top:.25rem;padding-top:.5rem"><span>VPN Active</span><span style="font-weight:600;color:var(--accent2)">${s.vpnActive||0} laptops</span></div>
+      <div class="info-row"><span>VPN Inactive</span><span style="font-weight:600;color:var(--muted)">${s.vpnInactive||0} laptops</span></div>
+      <div class="info-row"><span>VPN Not Applicable</span><span style="font-weight:600;color:var(--muted)">${s.vpnNA||0} laptops</span></div>`;
 
     // Active repairs
     const repEl=document.getElementById("dash-repairs-list");
@@ -541,24 +544,39 @@ async function submitApproveReturn(){
 async function loadLaptops(){try{const data=await api("getAllLaptops");allLaptops=data.laptops||[];renderLaptops();}catch(e){}}
 function renderLaptops(){
   const tbody=document.getElementById("laptops-table");
-  // FIX 2: Allow editing all statuses including Scrap/Damaged
-  tbody.innerHTML=allLaptops.length?allLaptops.map(l=>`<tr>
+  if(!allLaptops.length){tbody.innerHTML='<tr><td colspan="9" class="empty-row">No laptops added yet</td></tr>';return;}
+  tbody.innerHTML=allLaptops.map((l,i)=>`<tr>
     <td style="font-family:var(--mono);font-size:.8rem">${l.id}</td>
     <td>${l.make}</td><td>${l.model}</td>
     <td style="font-family:var(--mono);font-size:.78rem">${l.serial||'—'}</td>
     <td style="font-size:.8rem">${l.vpn||"—"}</td>
-    <td>${badge(l.status)}</td><td>${l.condition||"—"}</td>
+    <td>${badge(l.status)}</td>
+    <td>${l.condition||"—"}</td>
     <td style="font-size:.82rem">${l.issuedTo||"—"}</td>
-    <td><button class="btn btn-ghost btn-sm" onclick="editLaptop('${l.id}')">Edit</button>
-    ${l.status==="Available"||l.status==="Damaged"||l.status==="Scrap"?`<button class="btn btn-warn btn-sm" onclick="quickRepair('${l.id}')">🔧</button>`:''}
-    </td></tr>`).join("")
-    :'<tr><td colspan="9" class="empty-row">No laptops added yet</td></tr>';
+    <td>
+      <div class="btn-row">
+        <button class="btn btn-ghost btn-sm" data-idx="${i}" onclick="editLaptopByIdx(this)">Edit</button>
+        ${l.status==="Available"||l.status==="Damaged"||l.status==="Scrap"?`<button class="btn btn-warn btn-sm" data-lid="${l.id}" onclick="quickRepair(this.dataset.lid)">🔧</button>`:''}
+      </div>
+    </td></tr>`).join("");
 }
 
-// FIX 3: Quick link to log repair from laptop list
-function quickRepair(laptopId){
-  openAddRepair();
-  setTimeout(()=>{ document.getElementById("repair-laptop").value=laptopId; },100);
+function editLaptopByIdx(btn){
+  const i=parseInt(btn.dataset.idx);
+  const l=allLaptops[i];
+  editingLaptopId=l.id;
+  document.getElementById("add-laptop-title").textContent="Edit Laptop — "+l.id;
+  document.getElementById("lp-id").value=l.id;
+  document.getElementById("lp-id").disabled=true;
+  document.getElementById("lp-make").value=l.make||"";
+  document.getElementById("lp-model").value=l.model||"";
+  document.getElementById("lp-serial").value=l.serial||"";
+  document.getElementById("lp-vpn").value=l.vpn||"Active";
+  document.getElementById("lp-vpnnum").value=l.vpnnum||"";
+  document.getElementById("lp-condition").value=l.condition||"Good";
+  document.getElementById("lp-status").value=l.status||"Available";
+  document.getElementById("lp-notes").value=l.notes||"";
+  openModal("modal-add-laptop");
 }
 
 function openAddLaptop(){
@@ -571,19 +589,10 @@ function openAddLaptop(){
   document.getElementById("lp-id").disabled=false;
   openModal("modal-add-laptop");
 }
-function editLaptop(id){
-  const l=allLaptops.find(x=>x.id===id);editingLaptopId=id;
-  document.getElementById("add-laptop-title").textContent="Edit Laptop — "+id;
-  document.getElementById("lp-id").value=l.id;document.getElementById("lp-id").disabled=true;
-  document.getElementById("lp-make").value=l.make;
-  document.getElementById("lp-model").value=l.model;
-  document.getElementById("lp-serial").value=l.serial||"";
-  document.getElementById("lp-vpn").value=l.vpn||"Active";
-  document.getElementById("lp-vpnnum").value=l.vpnnum||"";
-  document.getElementById("lp-condition").value=l.condition||"Good";
-  document.getElementById("lp-status").value=l.status||"Available"; // FIX 1+2
-  document.getElementById("lp-notes").value=l.notes||"";
-  openModal("modal-add-laptop");
+
+function quickRepair(laptopId){
+  openAddRepair();
+  setTimeout(()=>{ document.getElementById("repair-laptop").value=laptopId; },150);
 }
 async function saveLaptop(){
   const id=editingLaptopId||document.getElementById("lp-id").value.trim();
