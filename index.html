@@ -247,7 +247,7 @@ tr:hover td{background:#f8f9fc}
 <script>
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwoY9GdK0nzpNy-02vP9wkpwilxrpFXaOtNBezifEa77fLT-e2p4p6oguyhmzsuO4vAmw/exec";
 
-let currentStaff = null, staffList = [], myLaptop = null, pendingTransferForMe = null;
+let currentStaff = null, staffList = [], myLaptop = null, pendingTransferForMe = null, hasPendingRequest = false;
 
 async function api(action, payload={}) {
   const url = SCRIPT_URL + "?action=" + action + "&" + new URLSearchParams(payload);
@@ -322,10 +322,19 @@ function logout() {
 async function refreshHome() {
   await loadMyLaptop();
   await loadPendingTransferForMe();
+  await loadPendingRequest();
   renderLaptopDisplay();
   renderActions();
   await loadMyRequests();
   await loadHistory();
+}
+
+async function loadPendingRequest() {
+  try {
+    const data = await api("getMyRequests", {staff: currentStaff});
+    const reqs = data.requests || [];
+    hasPendingRequest = reqs.some(r => r.type === "Request" && r.status === "Pending");
+  } catch(e) { hasPendingRequest = false; }
 }
 
 async function loadMyLaptop() {
@@ -363,21 +372,21 @@ function renderLaptopDisplay() {
 function renderActions() {
   const grid = document.getElementById("action-grid");
   let html = "";
-
-  // FIX 9: Check if staff already has a laptop OR has a pending incoming transfer
   const hasPendingIncoming = !!pendingTransferForMe;
 
   if (!myLaptop) {
     if (hasPendingIncoming) {
-      // Has incoming transfer pending — block new request
       html += `<div style="background:#fff4e5;border:1.5px solid #ffd8a0;border-radius:12px;padding:1rem;font-size:.85rem;color:var(--warn)">
         ⏳ You have a pending laptop transfer incoming. Please confirm receipt before requesting another.
+      </div>`;
+    } else if (hasPendingRequest) {
+      html += `<div style="background:#e8effe;border:1.5px solid #c5d4fc;border-radius:12px;padding:1rem;font-size:.85rem;color:var(--accent)">
+        ⏳ You already have a pending laptop request. Please wait for manager approval.
       </div>`;
     } else {
       html += actionBtn("📋","Request Laptop","Ask for a laptop from the pool","openModal('modal-request')");
     }
   } else {
-    // Has laptop — can transfer or return, but NOT request another
     html += actionBtn("🔄","Transfer","Hand over to another staff","openTransferModal()");
     html += actionBtn("↩️","Return","Return to free pool","openReturnModal()");
   }
