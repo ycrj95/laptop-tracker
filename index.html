@@ -324,7 +324,9 @@ async function refreshHome() {
     const data = await api("batchStaffHome", {staff: currentStaff});
     myLaptop = data.laptop || null;
     pendingTransferForMe = data.transfer || null;
-    hasPendingRequest = (data.requests||[]).some(r => r.type==="Request" && r.status==="Pending");
+    // Block request if: already has pending request OR has any incoming transfer pending
+    hasPendingRequest = (data.requests||[]).some(r => r.type==="Request" && r.status==="Pending")
+                        || !!data.hasIncomingPending;
     renderLaptopDisplay();
     renderActions();
     renderMyRequests(data.requests||[]);
@@ -365,7 +367,7 @@ function renderActions() {
   if (!myLaptop) {
     if (hasPendingIncoming) {
       html += `<div style="background:#fff4e5;border:1.5px solid #ffd8a0;border-radius:12px;padding:1rem;font-size:.85rem;color:var(--warn)">
-        ⏳ You have a pending laptop transfer incoming. Please confirm receipt before requesting another.
+        ⏳ A laptop transfer to you is in progress. Please wait for manager approval.
       </div>`;
     } else if (hasPendingRequest) {
       html += `<div style="background:#e8effe;border:1.5px solid #c5d4fc;border-radius:12px;padding:1rem;font-size:.85rem;color:var(--accent)">
