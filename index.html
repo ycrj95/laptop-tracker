@@ -346,8 +346,7 @@ function renderLaptopDisplay() {
       <div class="laptop-model">${myLaptop.make} ${myLaptop.model}</div>
       <div class="laptop-meta">
         <span>Serial: ${myLaptop.serial}</span><span>•</span>
-        <span>VPN: ${myLaptop.vpn||'—'}</span><span>•</span>
-        <span>Condition: ${myLaptop.condition||'—'}</span>
+        <span>VPN: ${myLaptop.vpn||'—'}</span>
       </div>
       <div style="margin-top:.75rem">${statusBadge(myLaptop.status)}</div>
     </div>`;
@@ -494,28 +493,31 @@ async function submitTransfer() {
   const reason = document.getElementById("transfer-reason").value.trim();
   if (!to) { toast("Please select a recipient."); return; }
   if (!reason) { toast("Please enter a reason."); return; }
-  // Optimistic UI — clear laptop display immediately
   closeModal("modal-transfer");
   toast("Transfer initiated! Waiting for " + to.split(" ")[0] + " to confirm.");
+  // Optimistic UI — add pending transfer to local state immediately
+  pendingActions = [{type:"Transfer", status:"Awaiting Confirmation", laptopId: myLaptop ? myLaptop.id : ""}];
+  renderActions();
   try {
     const r = await apiPost({action:"initiateTransfer", fromStaff:currentStaff, toStaff:to, laptopId:myLaptop.id, notes:reason});
-    if (!r.success) toast("Error: " + (r.message||"Try again"));
-    refreshHome();
-  } catch(e) { toast("Connection error."); }
+    if (!r.success) { toast("Error: " + (r.message||"Try again")); pendingActions = []; renderActions(); }
+    else refreshHome();
+  } catch(e) { toast("Connection error."); pendingActions = []; renderActions(); }
 }
 
 async function submitReturn() {
   const notes = document.getElementById("return-notes").value;
-  // Optimistic UI — clear laptop immediately
   closeModal("modal-return");
   const prevLaptop = myLaptop;
+  // Optimistic UI — show pending return state immediately
+  pendingActions = [{type:"Return", status:"Awaiting Manager Approval", laptopId: prevLaptop ? prevLaptop.id : ""}];
   myLaptop = null; renderLaptopDisplay(); renderActions();
   toast("Return submitted! Manager will confirm.");
   try {
     const r = await apiPost({action:"returnLaptop", staff:currentStaff, laptopId:prevLaptop.id, notes});
-    if (!r.success) { toast("Error: " + (r.message||"Try again")); myLaptop = prevLaptop; renderLaptopDisplay(); renderActions(); }
+    if (!r.success) { toast("Error: " + (r.message||"Try again")); myLaptop = prevLaptop; pendingActions = []; renderLaptopDisplay(); renderActions(); }
     else refreshHome();
-  } catch(e) { toast("Connection error."); myLaptop = prevLaptop; renderLaptopDisplay(); renderActions(); }
+  } catch(e) { toast("Connection error."); myLaptop = prevLaptop; pendingActions = []; renderLaptopDisplay(); renderActions(); }
 }
 
 async function confirmTransferReceipt() {
