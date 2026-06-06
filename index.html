@@ -247,7 +247,7 @@ tr:hover td{background:#f8f9fc}
 <script>
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwoY9GdK0nzpNy-02vP9wkpwilxrpFXaOtNBezifEa77fLT-e2p4p6oguyhmzsuO4vAmw/exec";
 
-let currentStaff = null, staffList = [], myLaptop = null, pendingTransferForMe = null, hasPendingRequest = false;
+let currentStaff = null, staffList = [], myLaptop = null, pendingTransferForMe = null, hasPendingRequest = false, pendingActions = [];
 
 async function api(action, payload={}) {
   const url = SCRIPT_URL + "?action=" + action + "&" + new URLSearchParams(payload);
@@ -324,8 +324,9 @@ async function refreshHome() {
     const data = await api("batchStaffHome", {staff: currentStaff});
     myLaptop = data.laptop || null;
     pendingTransferForMe = data.transfer || null;
-    // Block request if: already has pending request OR has any incoming transfer pending
-    hasPendingRequest = (data.requests||[]).some(r => r.type==="Request" && r.status==="Pending")
+    pendingActions = data.requests || [];
+    // Block request if pending request or any incoming transfer pending
+    hasPendingRequest = pendingActions.some(r => r.type==="Request" && r.status==="Pending")
                         || !!data.hasIncomingPending;
     renderLaptopDisplay();
     renderActions();
@@ -362,16 +363,34 @@ function renderLaptopDisplay() {
 function renderActions() {
   const grid = document.getElementById("action-grid");
   let html = "";
+
+  // Check for ANY outgoing pending action by this staff
+  const pendingAction = pendingActions.find(r =>
+    (r.type === "Request"  && r.status === "Pending") ||
+    (r.type === "Transfer" && (r.status === "Awaiting Confirmation" || r.status === "Awaiting Manager Approval")) ||
+    (r.type === "Return"   && r.status === "Awaiting Manager Approval")
+  );
+
+  // Check for incoming transfer to confirm
   const hasPendingIncoming = !!pendingTransferForMe;
 
-  if (!myLaptop) {
+  if (pendingAction) {
+    // Any pending outgoing action — lock everything, show one message
+    const msgMap = {
+      "Request":  "⏳ Your laptop request is pending manager approval.",
+      "Transfer": r => r.status === "Awaiting Confirmation"
+        ? "⏳ Your transfer request is waiting for the recipient to confirm."
+        : "⏳ Your transfer is pending manager approval.",
+      "Return":   "⏳ Your return request is pending manager approval."
+    };
+    const msg = typeof msgMap[pendingAction.type] === "function"
+      ? msgMap[pendingAction.type](pendingAction)
+      : msgMap[pendingAction.type];
+    html = `<div style="background:#fff4e5;border:1.5px solid #ffd8a0;border-radius:12px;padding:1rem;font-size:.85rem;color:var(--warn)">${msg}</div>`;
+  } else if (!myLaptop) {
     if (hasPendingIncoming) {
       html += `<div style="background:#fff4e5;border:1.5px solid #ffd8a0;border-radius:12px;padding:1rem;font-size:.85rem;color:var(--warn)">
-        ⏳ A laptop transfer to you is in progress. Please wait for manager approval.
-      </div>`;
-    } else if (hasPendingRequest) {
-      html += `<div style="background:#e8effe;border:1.5px solid #c5d4fc;border-radius:12px;padding:1rem;font-size:.85rem;color:var(--accent)">
-        ⏳ You already have a pending laptop request. Please wait for manager approval.
+        ⏳ A laptop transfer to you is pending manager approval.
       </div>`;
     } else {
       html += actionBtn("📋","Request Laptop","Ask for a laptop from the pool","openModal('modal-request')");
@@ -381,7 +400,8 @@ function renderActions() {
     html += actionBtn("↩️","Return","Return to free pool","openReturnModal()");
   }
 
-  if (hasPendingIncoming) {
+  // Confirm receipt button — only when incoming transfer awaiting staff B confirmation
+  if (hasPendingIncoming && !pendingAction) {
     html += `<button class="action-btn action-btn-confirm" onclick="openConfirmTransfer()">
       <div class="action-btn-icon">✅</div>
       <span class="action-btn-title">Confirm Receipt</span>
