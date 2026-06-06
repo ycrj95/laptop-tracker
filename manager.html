@@ -394,47 +394,43 @@ document.addEventListener("keydown",e=>{
 async function api(action,params={}){return(await fetch(SCRIPT_URL+"?action="+action+"&"+new URLSearchParams(params))).json();}
 async function apiPost(payload){return(await fetch(SCRIPT_URL,{method:"POST",body:JSON.stringify(payload)})).json();}
 
-// ─── SMART CACHE ───
-// Load all data once on init, then only refresh what's needed after each action
-const cache = { dashboard:null, approvals:null, laptops:null, staff:null, repairs:null, history:null };
-
 async function init(){
-  // Load all in parallel once
-  const [dash,appr,laps,stf,rep,hist] = await Promise.all([
-    api("getDashboard"), api("getPendingApprovals"), api("getAllLaptops"),
-    api("getStaff"), api("getRepairs"), api("getAllHistory")
-  ]);
-  cache.dashboard = dash; cache.approvals = appr; cache.laptops = laps;
-  cache.staff = stf; cache.repairs = rep; cache.history = hist;
-  allLaptops = laps.laptops||[]; allStaff = stf.staff||[];
-  allApprovals = appr.approvals||[]; allHistory = hist.history||[]; allRepairs = rep.repairs||[];
-  renderDashboard(dash); renderApprovals(); renderLaptops(); renderStaff(); renderRepairs(); filterHistory();
+  // Single batch call — all data in one round trip
+  const data = await api("batchManager");
+  allLaptops = data.laptops?.laptops||[];
+  allStaff   = data.staff?.staff||[];
+  allApprovals = data.approvals?.approvals||[];
+  allHistory = data.history?.history||[];
+  allRepairs = data.repairs?.repairs||[];
+  renderDashboard(data.dashboard||{});
+  renderApprovals(); renderLaptops(); renderStaff(); renderRepairs(); filterHistory();
   updateApprovalBadge();
 }
 
-// Partial refresh helpers — only reload what changed
+// Single batch refresh after any approval action
 async function refreshAfterApproval(){
-  const [dash,appr,laps,stf] = await Promise.all([
-    api("getDashboard"), api("getPendingApprovals"), api("getAllLaptops"), api("getStaff")
-  ]);
-  cache.dashboard=dash; cache.approvals=appr; cache.laptops=laps; cache.staff=stf;
-  allLaptops=laps.laptops||[]; allStaff=stf.staff||[]; allApprovals=appr.approvals||[];
-  renderDashboard(dash); renderApprovals(); renderLaptops(); renderStaff(); updateApprovalBadge();
+  const data = await api("batchManagerRefresh");
+  allLaptops   = data.laptops?.laptops||[];
+  allStaff     = data.staff?.staff||[];
+  allApprovals = data.approvals?.approvals||[];
+  renderDashboard(data.dashboard||{}); renderApprovals(); renderLaptops(); renderStaff(); updateApprovalBadge();
 }
+// After laptop edit — only need dashboard + laptops
 async function refreshAfterLaptopEdit(){
-  const [dash,laps] = await Promise.all([api("getDashboard"), api("getAllLaptops")]);
-  cache.dashboard=dash; cache.laptops=laps; allLaptops=laps.laptops||[];
-  renderDashboard(dash); renderLaptops();
+  const [dash,laps] = await Promise.all([api("getDashboard"),api("getAllLaptops")]);
+  allLaptops=laps.laptops||[]; renderDashboard(dash); renderLaptops();
 }
+// After repair — need dashboard + laptops + repairs
 async function refreshAfterRepair(){
-  const [dash,laps,rep] = await Promise.all([api("getDashboard"),api("getAllLaptops"),api("getRepairs")]);
-  cache.dashboard=dash; cache.laptops=laps; cache.repairs=rep;
-  allLaptops=laps.laptops||[]; allRepairs=rep.repairs||[];
-  renderDashboard(dash); renderLaptops(); renderRepairs();
+  const data = await api("batchManagerRefresh");
+  allLaptops=data.laptops?.laptops||[]; allRepairs=[];
+  renderDashboard(data.dashboard||{}); renderLaptops();
+  const rep = await api("getRepairs");
+  allRepairs=rep.repairs||[]; renderRepairs();
 }
+// After staff change — only staff
 async function refreshAfterStaff(){
-  const stf = await api("getStaff");
-  cache.staff=stf; allStaff=stf.staff||[]; renderStaff();
+  const stf=await api("getStaff"); allStaff=stf.staff||[]; renderStaff();
 }
 function updateApprovalBadge(){
   const count=allApprovals.length;
@@ -526,28 +522,42 @@ async function openAssign(txnId){
   const sel=document.getElementById("assign-laptop-sel");
   sel.innerHTML='<option value="">— Select available laptop —</option>';
   allLaptops.filter(l=>l.status==="Available").forEach(l=>{
-    const o=document.createElement("option");o.value=l.id;o.textContent=`${l.id} — ${l.make} ${l.model} (${l.condition})`;sel.appendChild(o);
+    const o=document.createElement("option");o.value=l.id;o.textContent=`${l.id} — ${l.make} ${l.model} | VPN: ${l.vpn||'—'}`;sel.appendChild(o);
   });
   openModal("modal-assign");
 }
 async function submitAssign(){
   const laptopId=document.getElementById("assign-laptop-sel").value;
   if(!laptopId){toast("Please select a laptop.");return;}
+  // Optimistic: remove from approvals list immediately
+  closeModal("modal-assign");
+  toast("Approved & assigned!");
+  allApprovals=allApprovals.filter(a=>a.txnId!==currentApprovalTxn.txnId);
+  renderApprovals(); updateApprovalBadge();
   const r=await apiPost({action:"approveRequest",txnId:currentApprovalTxn.txnId,laptopId,staff:currentApprovalTxn.staff});
-  if(r.success){toast("Approved & assigned!");closeModal("modal-assign");await refreshAfterApproval();}
-  else toast("Error: "+(r.message||"Try again"));
+  if(!r.success) toast("Error: "+(r.message||"Try again"));
+  refreshAfterApproval();
 }
 
 function openReject(txnId){rejectTxnId=txnId;document.getElementById("reject-reason").value="";openModal("modal-reject");}
 async function submitReject(){
-  const r=await apiPost({action:"rejectTxn",txnId:rejectTxnId,reason:document.getElementById("reject-reason").value});
-  if(r.success){toast("Rejected.");closeModal("modal-reject");await refreshAfterApproval();}
-  else toast("Error: "+(r.message||"Try again"));
+  const reason=document.getElementById("reject-reason").value;
+  closeModal("modal-reject");
+  toast("Request rejected.");
+  allApprovals=allApprovals.filter(a=>a.txnId!==rejectTxnId);
+  renderApprovals(); updateApprovalBadge();
+  const r=await apiPost({action:"rejectTxn",txnId:rejectTxnId,reason});
+  if(!r.success) toast("Error: "+(r.message||"Try again"));
+  refreshAfterApproval();
 }
 async function approveTransfer(txnId){
+  // Optimistic: remove from list immediately
+  allApprovals=allApprovals.filter(a=>a.txnId!==txnId);
+  renderApprovals(); updateApprovalBadge();
+  toast("Transfer approved!");
   const r=await apiPost({action:"approveTransfer",txnId});
-  if(r.success){toast("Transfer approved!");await refreshAfterApproval();}
-  else toast("Error: "+(r.message||"Try again"));
+  if(!r.success) toast("Error: "+(r.message||"Try again"));
+  refreshAfterApproval();
 }
 
 // FIX 8: Manager sets condition when confirming return
@@ -561,9 +571,13 @@ function openApproveReturn(txnId,laptopId,staff){
 async function submitApproveReturn(){
   const condition=document.getElementById("mgr-return-condition").value;
   const notes=document.getElementById("mgr-return-notes").value;
+  closeModal("modal-approve-return");
+  toast("Return confirmed!");
+  allApprovals=allApprovals.filter(a=>a.txnId!==returnApprovalTxn.txnId);
+  renderApprovals(); updateApprovalBadge();
   const r=await apiPost({action:"approveReturn",txnId:returnApprovalTxn.txnId,laptopId:returnApprovalTxn.laptopId,condition,notes,staff:returnApprovalTxn.staff});
-  if(r.success){toast("Return confirmed!");closeModal("modal-approve-return");await refreshAfterApproval();}
-  else toast("Error: "+(r.message||"Try again"));
+  if(!r.success) toast("Error: "+(r.message||"Try again"));
+  refreshAfterApproval();
 }
 
 // ─── LAPTOPS ───
