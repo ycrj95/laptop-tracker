@@ -320,32 +320,20 @@ function logout() {
 }
 
 async function refreshHome() {
-  // On first load, fetch everything; after actions only refresh what changed
-  await Promise.all([loadMyLaptop(), loadPendingTransferForMe(), loadPendingRequest()]);
-  renderLaptopDisplay();
-  renderActions();
-  // Load requests and history in background — don't block UI
-  loadMyRequests();
-  loadHistory();
-}
-
-async function loadPendingRequest() {
   try {
-    const data = await api("getMyRequests", {staff: currentStaff});
-    const reqs = data.requests || [];
-    hasPendingRequest = reqs.some(r => r.type === "Request" && r.status === "Pending");
-  } catch(e) { hasPendingRequest = false; }
+    const data = await api("batchStaffHome", {staff: currentStaff});
+    myLaptop = data.laptop || null;
+    pendingTransferForMe = data.transfer || null;
+    hasPendingRequest = (data.requests||[]).some(r => r.type==="Request" && r.status==="Pending");
+    renderLaptopDisplay();
+    renderActions();
+    renderMyRequests(data.requests||[]);
+    renderHistory(data.history||[]);
+  } catch(e) { console.error(e); }
 }
-
-async function loadMyLaptop() {
-  try { const data = await api("getMyLaptop", {staff: currentStaff}); myLaptop = data.laptop || null; }
-  catch(e) { myLaptop = null; }
-}
-
-async function loadPendingTransferForMe() {
-  try { const data = await api("getPendingTransferForStaff", {staff: currentStaff}); pendingTransferForMe = data.transfer || null; }
-  catch(e) { pendingTransferForMe = null; }
-}
+async function loadPendingRequest() {}
+async function loadMyLaptop() {}
+async function loadPendingTransferForMe() {}
 
 function renderLaptopDisplay() {
   const el = document.getElementById("laptop-display");
@@ -410,37 +398,31 @@ function actionBtn(icon, title, sub, onclick) {
   </button>`;
 }
 
-async function loadMyRequests() {
-  try {
-    const data = await api("getMyRequests", {staff: currentStaff});
-    const reqs = data.requests || [];
-    const el = document.getElementById("my-requests-list");
-    if (!reqs.length) { el.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--muted)">No pending requests</div>'; return; }
-    el.innerHTML = reqs.map(r => `
-      <div style="padding:.9rem 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
-        <div>
-          <div style="font-size:.88rem;font-weight:500">${r.type}${r.laptopId?' — '+r.laptopId:''}</div>
-          <div style="font-size:.78rem;color:var(--muted);margin-top:.2rem">${r.notes||''} · ${formatDate(r.date)}</div>
-        </div>
-        <div>${statusBadge(r.status)}</div>
-      </div>`).join("");
-  } catch(e) {}
+function renderMyRequests(reqs) {
+  const el = document.getElementById("my-requests-list");
+  if (!reqs.length) { el.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--muted)">No pending requests</div>'; return; }
+  el.innerHTML = reqs.map(r => `
+    <div style="padding:.9rem 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <div style="font-size:.88rem;font-weight:500">${r.type}${r.laptopId?' — '+r.laptopId:''}</div>
+        <div style="font-size:.78rem;color:var(--muted);margin-top:.2rem">${r.notes||''} · ${formatDate(r.date)}</div>
+      </div>
+      <div>${statusBadge(r.status)}</div>
+    </div>`).join("");
 }
-
-async function loadHistory() {
-  try {
-    const data = await api("getMyHistory", {staff: currentStaff});
-    const txns = data.history || [];
-    const tbody = document.getElementById("history-body");
-    if (!txns.length) { tbody.innerHTML = '<tr><td colspan="4" class="empty-row">No history yet</td></tr>'; return; }
-    tbody.innerHTML = txns.map(t => `<tr>
-      <td style="font-family:var(--mono);font-size:.78rem;color:var(--muted)">${formatDate(t.date)}</td>
-      <td>${t.type}</td>
-      <td style="font-family:var(--mono);font-size:.8rem">${t.laptopId||'—'}</td>
-      <td>${statusBadge(t.status)}</td>
-    </tr>`).join("");
-  } catch(e) {}
+function renderHistory(txns) {
+  const tbody = document.getElementById("history-body");
+  if (!txns.length) { tbody.innerHTML = '<tr><td colspan="4" class="empty-row">No history yet</td></tr>'; return; }
+  tbody.innerHTML = txns.map(t => `<tr>
+    <td style="font-family:var(--mono);font-size:.78rem;color:var(--muted)">${formatDate(t.date)}</td>
+    <td>${t.type}</td>
+    <td style="font-family:var(--mono);font-size:.8rem">${t.laptopId||'—'}</td>
+    <td>${statusBadge(t.status)}</td>
+  </tr>`).join("");
 }
+// Kept for tab click compatibility
+async function loadMyRequests() { const d=await api("batchStaffHome",{staff:currentStaff}); renderMyRequests(d.requests||[]); }
+async function loadHistory() { const d=await api("batchStaffHome",{staff:currentStaff}); renderHistory(d.history||[]); }
 
 function openModal(id) { document.getElementById(id).classList.add("open"); }
 function closeModal(id) { document.getElementById(id).classList.remove("open"); }
@@ -473,11 +455,16 @@ function openConfirmTransfer() {
 async function submitRequest() {
   const reason = document.getElementById("req-reason").value.trim();
   if (!reason) { toast("Please enter a reason."); return; }
+  // Optimistic UI — close modal and show pending state immediately
+  closeModal("modal-request");
+  hasPendingRequest = true;
+  renderActions();
+  toast("Request submitted! Awaiting manager approval.");
   try {
     const r = await apiPost({action:"requestLaptop", staff:currentStaff, notes:reason});
-    if (r.success) { toast("Request submitted!"); closeModal("modal-request"); await refreshHome(); }
-    else toast("Error: " + (r.message||"Try again"));
-  } catch(e) { toast("Connection error. Try again."); }
+    if (!r.success) { toast("Error: " + (r.message||"Try again")); hasPendingRequest = false; renderActions(); }
+    else refreshHome(); // sync in background
+  } catch(e) { toast("Connection error."); hasPendingRequest = false; renderActions(); }
 }
 
 async function submitTransfer() {
@@ -485,28 +472,38 @@ async function submitTransfer() {
   const reason = document.getElementById("transfer-reason").value.trim();
   if (!to) { toast("Please select a recipient."); return; }
   if (!reason) { toast("Please enter a reason."); return; }
+  // Optimistic UI — clear laptop display immediately
+  closeModal("modal-transfer");
+  toast("Transfer initiated! Waiting for " + to.split(" ")[0] + " to confirm.");
   try {
     const r = await apiPost({action:"initiateTransfer", fromStaff:currentStaff, toStaff:to, laptopId:myLaptop.id, notes:reason});
-    if (r.success) { toast("Transfer initiated!"); closeModal("modal-transfer"); await refreshHome(); }
-    else toast("Error: " + (r.message||"Try again"));
-  } catch(e) { toast("Connection error. Try again."); }
+    if (!r.success) toast("Error: " + (r.message||"Try again"));
+    refreshHome();
+  } catch(e) { toast("Connection error."); }
 }
 
 async function submitReturn() {
   const notes = document.getElementById("return-notes").value;
+  // Optimistic UI — clear laptop immediately
+  closeModal("modal-return");
+  const prevLaptop = myLaptop;
+  myLaptop = null; renderLaptopDisplay(); renderActions();
+  toast("Return submitted! Manager will confirm.");
   try {
-    const r = await apiPost({action:"returnLaptop", staff:currentStaff, laptopId:myLaptop.id, notes});
-    if (r.success) { toast("Return submitted! Manager will inspect and confirm."); closeModal("modal-return"); await refreshHome(); }
-    else toast("Error: " + (r.message||"Try again"));
-  } catch(e) { toast("Connection error. Try again."); }
+    const r = await apiPost({action:"returnLaptop", staff:currentStaff, laptopId:prevLaptop.id, notes});
+    if (!r.success) { toast("Error: " + (r.message||"Try again")); myLaptop = prevLaptop; renderLaptopDisplay(); renderActions(); }
+    else refreshHome();
+  } catch(e) { toast("Connection error."); myLaptop = prevLaptop; renderLaptopDisplay(); renderActions(); }
 }
 
 async function confirmTransferReceipt() {
+  closeModal("modal-confirm-transfer");
+  toast("Receipt confirmed! Awaiting manager approval.");
   try {
     const r = await apiPost({action:"confirmTransfer", txnId:pendingTransferForMe.txnId, toStaff:currentStaff});
-    if (r.success) { toast("Receipt confirmed!"); closeModal("modal-confirm-transfer"); await refreshHome(); }
-    else toast("Error: " + (r.message||"Try again"));
-  } catch(e) { toast("Connection error. Try again."); }
+    if (!r.success) toast("Error: " + (r.message||"Try again"));
+    refreshHome();
+  } catch(e) { toast("Connection error."); }
 }
 
 function showPage(id, btn) {
