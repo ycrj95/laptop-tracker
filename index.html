@@ -247,7 +247,7 @@ tr:hover td{background:#f8f9fc}
 <script>
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwoY9GdK0nzpNy-02vP9wkpwilxrpFXaOtNBezifEa77fLT-e2p4p6oguyhmzsuO4vAmw/exec";
 
-let currentStaff = null, staffList = [], myLaptop = null, pendingTransferForMe = null, hasPendingRequest = false, pendingActions = [];
+let currentStaff = null, staffList = [], myLaptop = null, pendingTransferForMe = null, hasPendingRequest = false, pendingActions = [], hasIncomingPendingGlobal = false;
 
 async function api(action, payload={}) {
   const url = SCRIPT_URL + "?action=" + action + "&" + new URLSearchParams(payload);
@@ -324,6 +324,7 @@ async function refreshHome() {
     const data = await api("batchStaffHome", {staff: currentStaff});
     myLaptop = data.laptop || null;
     pendingTransferForMe = data.transfer || null;
+    hasIncomingPendingGlobal = !!data.hasIncomingPending;
     pendingActions = data.requests || [];
     // Block request if pending request or any incoming transfer pending
     hasPendingRequest = pendingActions.some(r => r.type==="Request" && r.status==="Pending")
@@ -388,6 +389,10 @@ function renderActions() {
     html = `<div style="background:#fff4e5;border:1.5px solid #ffd8a0;border-radius:12px;padding:1rem;font-size:.85rem;color:var(--warn)">${msg}</div>`;
   } else if (!myLaptop) {
     if (hasPendingIncoming) {
+      html += `<div style="background:#fff4e5;border:1.5px solid #ffd8a0;border-radius:12px;padding:1rem;font-size:.85rem;color:var(--warn)">
+        ⏳ A laptop transfer to you is pending manager approval.
+      </div>`;
+    } else if (hasIncomingPendingGlobal) {
       html += `<div style="background:#fff4e5;border:1.5px solid #ffd8a0;border-radius:12px;padding:1rem;font-size:.85rem;color:var(--warn)">
         ⏳ A laptop transfer to you is pending manager approval.
       </div>`;
@@ -521,13 +526,19 @@ async function submitReturn() {
 }
 
 async function confirmTransferReceipt() {
+  const txnId = pendingTransferForMe.txnId;
+  const laptopId = pendingTransferForMe.laptopId;
   closeModal("modal-confirm-transfer");
   toast("Receipt confirmed! Awaiting manager approval.");
+  // Optimistic — block actions immediately, clear confirm button
+  pendingActions = [{type:"Transfer", status:"Awaiting Manager Approval", laptopId}];
+  pendingTransferForMe = null;
+  renderActions();
   try {
-    const r = await apiPost({action:"confirmTransfer", txnId:pendingTransferForMe.txnId, toStaff:currentStaff});
-    if (!r.success) toast("Error: " + (r.message||"Try again"));
-    refreshHome();
-  } catch(e) { toast("Connection error."); }
+    const r = await apiPost({action:"confirmTransfer", txnId, toStaff:currentStaff});
+    if (!r.success) { toast("Error: " + (r.message||"Try again")); pendingActions = []; renderActions(); }
+    else refreshHome();
+  } catch(e) { toast("Connection error."); pendingActions = []; renderActions(); }
 }
 
 function showPage(id, btn) {
