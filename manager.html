@@ -749,7 +749,19 @@ function filterHistory(){
     :'<tr><td colspan="6" class="empty-row">No records found</td></tr>';
 }
 
-function showPage(id,btn){document.querySelectorAll(".page").forEach(p=>p.classList.remove("active"));document.querySelectorAll(".nav-tab").forEach(t=>t.classList.remove("active"));document.getElementById("page-"+id).classList.add("active");btn.classList.add("active");}
+function showPage(id,btn){
+  document.querySelectorAll(".page").forEach(p=>p.classList.remove("active"));
+  document.querySelectorAll(".nav-tab").forEach(t=>t.classList.remove("active"));
+  document.getElementById("page-"+id).classList.add("active");
+  btn.classList.add("active");
+  // Refresh relevant data on tab switch
+  if(id==="dashboard") loadDashboard();
+  else if(id==="approvals") loadApprovals();
+  else if(id==="laptops") loadLaptops();
+  else if(id==="staff") loadStaff();
+  else if(id==="repairs") loadRepairs();
+  else if(id==="history") loadHistory();
+}
 function openModal(id){document.getElementById(id).classList.add("open");}
 function closeModal(id){document.getElementById(id).classList.remove("open");}
 
