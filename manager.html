@@ -498,12 +498,15 @@ function renderApprovals(){
       detail=`<b>${a.staff}</b> requests a laptop · <span style="color:var(--muted)">${a.notes||""}</span>`;
       actions=`<button class="btn btn-success btn-sm" onclick="openAssign('${a.txnId}')">Approve &amp; Assign</button>
                <button class="btn btn-danger btn-sm" onclick="openReject('${a.txnId}')">Reject</button>`;
+    }else if(a.type==="Transfer" && a.status==="Awaiting Confirmation"){
+      // Transfer waiting for Staff B to confirm — manager can see but not act yet
+      detail=`<b>${a.fromStaff}</b> → <b>${a.toStaff}</b> · ${a.laptopId} · <span style="color:var(--muted)">${a.notes||""}</span>`;
+      actions=`<span style="font-size:.78rem;color:var(--warn);font-weight:500">⏳ Waiting for ${a.toStaff.split(" ")[0]} to confirm receipt</span>`;
     }else if(a.type==="Transfer"){
       detail=`<b>${a.fromStaff}</b> → <b>${a.toStaff}</b> · ${a.laptopId} · <span style="color:var(--muted)">${a.notes||""}</span>`;
       actions=`<button class="btn btn-success btn-sm" onclick="approveTransfer('${a.txnId}')">Approve</button>
                <button class="btn btn-danger btn-sm" onclick="openReject('${a.txnId}')">Reject</button>`;
     }else if(a.type==="Return"){
-      // FIX 8: Manager tags condition on return
       detail=`<b>${a.staff}</b> returning <b>${a.laptopId}</b>`;
       actions=`<button class="btn btn-success btn-sm" onclick="openApproveReturn('${a.txnId}','${a.laptopId}','${a.staff}')">Confirm &amp; Tag Condition</button>
                <button class="btn btn-danger btn-sm" onclick="openReject('${a.txnId}')">Reject</button>`;
