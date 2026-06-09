@@ -364,18 +364,25 @@ function renderActions() {
   const grid = document.getElementById("action-grid");
   let html = "";
 
-  // Check for ANY outgoing pending action by this staff
+  // Check for incoming transfer needing confirmation (highest priority)
+  const hasPendingIncoming = !!pendingTransferForMe;
+
+  // Check for any outgoing pending action
   const pendingAction = pendingActions.find(r =>
     (r.type === "Request"  && r.status === "Pending") ||
     (r.type === "Transfer" && (r.status === "Awaiting Confirmation" || r.status === "Awaiting Manager Approval")) ||
     (r.type === "Return"   && r.status === "Awaiting Manager Approval")
   );
 
-  // Check for incoming transfer to confirm
-  const hasPendingIncoming = !!pendingTransferForMe;
-
-  if (pendingAction) {
-    // Any pending outgoing action — lock everything, show one message
+  if (hasPendingIncoming) {
+    // Staff B needs to confirm receipt — show ONLY the confirm button, nothing else
+    html = `<button class="action-btn action-btn-confirm" onclick="openConfirmTransfer()">
+      <div class="action-btn-icon">✅</div>
+      <span class="action-btn-title">Confirm Receipt</span>
+      <span class="action-btn-sub">Someone transferred a laptop to you</span>
+    </button>`;
+  } else if (pendingAction) {
+    // Outgoing action pending — show message, lock all buttons
     const msgMap = {
       "Request":  "⏳ Your laptop request is pending manager approval.",
       "Transfer": r => r.status === "Awaiting Confirmation"
@@ -387,30 +394,16 @@ function renderActions() {
       ? msgMap[pendingAction.type](pendingAction)
       : msgMap[pendingAction.type];
     html = `<div style="background:#fff4e5;border:1.5px solid #ffd8a0;border-radius:12px;padding:1rem;font-size:.85rem;color:var(--warn)">${msg}</div>`;
+  } else if (hasIncomingPendingGlobal) {
+    // Transfer confirmed by Staff B, waiting for manager — block request
+    html = `<div style="background:#fff4e5;border:1.5px solid #ffd8a0;border-radius:12px;padding:1rem;font-size:.85rem;color:var(--warn)">
+      ⏳ A laptop transfer to you is pending manager approval.
+    </div>`;
   } else if (!myLaptop) {
-    if (hasPendingIncoming) {
-      html += `<div style="background:#fff4e5;border:1.5px solid #ffd8a0;border-radius:12px;padding:1rem;font-size:.85rem;color:var(--warn)">
-        ⏳ A laptop transfer to you is pending manager approval.
-      </div>`;
-    } else if (hasIncomingPendingGlobal) {
-      html += `<div style="background:#fff4e5;border:1.5px solid #ffd8a0;border-radius:12px;padding:1rem;font-size:.85rem;color:var(--warn)">
-        ⏳ A laptop transfer to you is pending manager approval.
-      </div>`;
-    } else {
-      html += actionBtn("📋","Request Laptop","Ask for a laptop from the pool","openModal('modal-request')");
-    }
+    html += actionBtn("📋","Request Laptop","Ask for a laptop from the pool","openModal('modal-request')");
   } else {
     html += actionBtn("🔄","Transfer","Hand over to another staff","openTransferModal()");
     html += actionBtn("↩️","Return","Return to free pool","openReturnModal()");
-  }
-
-  // Confirm receipt button — only when incoming transfer awaiting staff B confirmation
-  if (hasPendingIncoming && !pendingAction) {
-    html += `<button class="action-btn action-btn-confirm" onclick="openConfirmTransfer()">
-      <div class="action-btn-icon">✅</div>
-      <span class="action-btn-title">Confirm Receipt</span>
-      <span class="action-btn-sub">Someone transferred a laptop to you</span>
-    </button>`;
   }
 
   grid.innerHTML = html || '<div style="color:var(--muted);font-size:.85rem">No actions available right now.</div>';
