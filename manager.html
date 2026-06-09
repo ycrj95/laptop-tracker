@@ -499,9 +499,9 @@ function renderApprovals(){
       actions=`<button class="btn btn-success btn-sm" onclick="openAssign('${a.txnId}')">Approve &amp; Assign</button>
                <button class="btn btn-danger btn-sm" onclick="openReject('${a.txnId}')">Reject</button>`;
     }else if(a.type==="Transfer" && a.status==="Awaiting Confirmation"){
-      // Transfer waiting for Staff B to confirm — manager can see but not act yet
-      detail=`<b>${a.fromStaff}</b> → <b>${a.toStaff}</b> · ${a.laptopId} · <span style="color:var(--muted)">${a.notes||""}</span>`;
-      actions=`<span style="font-size:.78rem;color:var(--warn);font-weight:500">⏳ Waiting for ${a.toStaff.split(" ")[0]} to confirm receipt</span>`;
+      // Transfer waiting for Staff B to confirm — manager can see but cannot approve yet
+      detail=`<b>${a.fromStaff}</b> transferred to <b>${a.toStaff}</b> · Laptop: <b>${a.laptopId}</b> · <span style="color:var(--muted)">${a.notes||""}</span>`;
+      actions=`<span style="background:#fff4e5;border:1px solid #ffd8a0;color:var(--warn);font-size:.78rem;font-weight:500;padding:.35rem .75rem;border-radius:6px">⏳ Waiting for ${a.toStaff} to confirm receipt</span>`;
     }else if(a.type==="Transfer"){
       detail=`<b>${a.fromStaff}</b> → <b>${a.toStaff}</b> · ${a.laptopId} · <span style="color:var(--muted)">${a.notes||""}</span>`;
       actions=`<button class="btn btn-success btn-sm" onclick="approveTransfer('${a.txnId}')">Approve</button>
