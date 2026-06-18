@@ -449,9 +449,26 @@ function closeModal(id) { document.getElementById(id).classList.remove("open"); 
 async function openTransferModal() {
   const sel = document.getElementById("transfer-to");
   sel.innerHTML = '<option value="">— Select staff member —</option>';
-  staffList.filter(s => s.active && s.name !== currentStaff).forEach(s => {
-    const o = document.createElement("option"); o.value = s.name; o.textContent = s.name; sel.appendChild(o);
-  });
+  // Fetch current laptop assignments to exclude staff who already have one
+  let staffWithLaptop = new Set();
+  try {
+    const data = await api("getAllLaptops");
+    (data.laptops || []).forEach(l => {
+      if (l.status === "Issued" && l.issuedTo) staffWithLaptop.add(l.issuedTo);
+    });
+  } catch(e) { console.error(e); }
+
+  const eligible = staffList.filter(s =>
+    s.active && s.name !== currentStaff && !staffWithLaptop.has(s.name)
+  );
+
+  if (!eligible.length) {
+    sel.innerHTML = '<option value="">— No staff available without a laptop —</option>';
+  } else {
+    eligible.forEach(s => {
+      const o = document.createElement("option"); o.value = s.name; o.textContent = s.name; sel.appendChild(o);
+    });
+  }
   openModal("modal-transfer");
 }
 
